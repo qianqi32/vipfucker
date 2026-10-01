@@ -62,6 +62,7 @@ jobs:
           git -C "$RUNNER_TEMP/source" remote add origin "$GITEA_SSH_URL"
           git -C "$RUNNER_TEMP/source" fetch --quiet --depth=1 origin "refs/tags/$TAG:refs/tags/$TAG"
           git -C "$RUNNER_TEMP/source" checkout --quiet --detach "refs/tags/$TAG^{commit}"
+          mkdir -p "$RUNNER_TEMP/source/app/src/main/assets"
           printf '%s' "$PREFS_INJECT_JSON_B64" | base64 --decode > "$RUNNER_TEMP/source/app/src/main/assets/prefs_inject.json"
           jq -e 'type == "object"' "$RUNNER_TEMP/source/app/src/main/assets/prefs_inject.json" >/dev/null
 

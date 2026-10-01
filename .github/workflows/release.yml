@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing Gitea release tag (vX.Y.Z)
+        description: Existing release tag (vX.Y.Z)
         required: true
         type: string
 
@@ -48,7 +48,7 @@ jobs:
             exit 1
           fi
 
-      - name: Fetch private source at Gitea tag
+      - name: Fetch source at release tag
         shell: bash
         run: |
           set -euo pipefail
@@ -78,7 +78,7 @@ jobs:
           set -euo pipefail
           SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
           test -f "$SDK_ROOT/platforms/android-37.0/android.jar" || { echo 'Android SDK platform 37.0 missing'; exit 1; }
-          bash ./gradlew --no-daemon --console=plain :app:assembleRelease > "$RUNNER_TEMP/gradle-build.log" 2>&1 || { echo 'Gradle build failed; reproduce locally with the Gitea tag'; exit 1; }
+          bash ./gradlew --no-daemon --console=plain :app:assembleRelease > "$RUNNER_TEMP/gradle-build.log" 2>&1 || { echo 'Gradle build failed; reproduce locally with the release tag'; exit 1; }
 
       - name: Check version and sign APK
         shell: bash
@@ -106,4 +106,4 @@ jobs:
           gh release create "$TAG" "$RUNNER_TEMP/VIPFucker-$TAG.apk" \
             --repo "$GITHUB_REPOSITORY" \
             --title "VIPFucker $TAG" \
-            --notes 'Signed APK built from the matching tag in the private Gitea repository.'
+            --notes 'VIPFucker Android 安装包。安装前请确认设备满足 README 中的系统及 LSPosed 要求。'

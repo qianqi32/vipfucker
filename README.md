@@ -2,7 +2,7 @@
 
 VIPFucker 是一个面向已适配 Android 应用的 LSPosed 模块。它通过内置规则为目标应用加载对应功能，并在模块界面集中显示适配列表、安装状态和作用域状态。
 
-> 项目尚未提供正式安装包。首个版本发布后，请从本仓库的 [Releases](https://github.com/qianqi32/vipfucker/releases) 页面下载；不要从非官方渠道获取 APK。
+最新安装包请从本仓库的 [Releases](https://github.com/qianqi32/vipfucker/releases) 页面下载；不要从非官方渠道获取 APK。
 
 ## 支持的应用
 
@@ -41,6 +41,6 @@ VIPFucker 是一个面向已适配 Android 应用的 LSPosed 模块。它通过�
 
 **更新后仍未生效？** 先重启目标应用进程。模块仅对部分满足特定条件的规则支持热重载，其他情况仍需重启。
 
-## 关于源码与发布
+## 项目说明
 
-源码保存在私有 Gitea 仓库；这个 GitHub 仓库用于项目介绍、自动构建配置和 APK 发布，不提供源码镜像。发布工作流从私有仓库获取对应版本的代码，构建并验证签名后上传安装包。当前项目与上述目标应用的开发者没有关联。
+VIPFucker 是独立项目，与上述目标应用的开发者没有关联。项目动态见 [Telegram 频道](https://t.me/VIPFuckerApp)。

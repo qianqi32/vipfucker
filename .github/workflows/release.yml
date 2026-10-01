@@ -1,0 +1,107 @@
+name: Build and publish APK
+
+on:
+  repository_dispatch:
+    types: [gitea_release]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing Gitea release tag (vX.Y.Z)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.client_payload.tag || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      TAG: ${{ github.event.client_payload.tag || inputs.tag }}
+      GITEA_SSH_URL: ${{ secrets.GITEA_SSH_URL }}
+      GITEA_DEPLOY_KEY: ${{ secrets.GITEA_DEPLOY_KEY }}
+      GITEA_KNOWN_HOSTS: ${{ secrets.GITEA_KNOWN_HOSTS }}
+      PREFS_INJECT_JSON_B64: ${{ secrets.PREFS_INJECT_JSON_B64 }}
+      APK_KEYSTORE_B64: ${{ secrets.APK_KEYSTORE_B64 }}
+      APK_KEY_ALIAS: ${{ secrets.APK_KEY_ALIAS }}
+      APK_STORE_PASS: ${{ secrets.APK_STORE_PASS }}
+      APK_KEY_PASS: ${{ secrets.APK_KEY_PASS }}
+      APK_CERT_SHA256: ${{ secrets.APK_CERT_SHA256 }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Validate inputs and existing releases
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Invalid release tag'; exit 1; }
+          for name in GITEA_SSH_URL GITEA_DEPLOY_KEY GITEA_KNOWN_HOSTS PREFS_INJECT_JSON_B64 APK_KEYSTORE_B64 APK_KEY_ALIAS APK_STORE_PASS APK_KEY_PASS APK_CERT_SHA256; do
+            test -n "${!name}" || { echo "Missing secret: $name"; exit 1; }
+          done
+          [[ "$APK_CERT_SHA256" =~ ^[[:xdigit:]]{64}$ ]] || { echo 'Invalid signing certificate fingerprint'; exit 1; }
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'Release already exists; refusing to replace it'
+            exit 1
+          fi
+
+      - name: Fetch private source at Gitea tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/ssh" "$RUNNER_TEMP/source"
+          printf '%s\n' "$GITEA_DEPLOY_KEY" > "$RUNNER_TEMP/ssh/id_ed25519"
+          printf '%s\n' "$GITEA_KNOWN_HOSTS" > "$RUNNER_TEMP/ssh/known_hosts"
+          chmod 700 "$RUNNER_TEMP/ssh"
+          chmod 600 "$RUNNER_TEMP/ssh/id_ed25519" "$RUNNER_TEMP/ssh/known_hosts"
+          export GIT_SSH_COMMAND="ssh -i $RUNNER_TEMP/ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$RUNNER_TEMP/ssh/known_hosts"
+          git -C "$RUNNER_TEMP/source" init --quiet
+          git -C "$RUNNER_TEMP/source" remote add origin "$GITEA_SSH_URL"
+          git -C "$RUNNER_TEMP/source" fetch --quiet --depth=1 origin "refs/tags/$TAG:refs/tags/$TAG"
+          git -C "$RUNNER_TEMP/source" checkout --quiet --detach "refs/tags/$TAG^{commit}"
+          printf '%s' "$PREFS_INJECT_JSON_B64" | base64 --decode > "$RUNNER_TEMP/source/app/src/main/assets/prefs_inject.json"
+          jq -e 'type == "object"' "$RUNNER_TEMP/source/app/src/main/assets/prefs_inject.json" >/dev/null
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android platform and build APK
+        shell: bash
+        working-directory: ${{ runner.temp }}/source
+        run: |
+          set -euo pipefail
+          sdkmanager --install 'platforms;android-37.0' > "$RUNNER_TEMP/sdkmanager.log" 2>&1 || { echo 'Android SDK setup failed'; exit 1; }
+          bash ./gradlew --no-daemon --console=plain :app:assembleRelease > "$RUNNER_TEMP/gradle-build.log" 2>&1 || { echo 'Gradle build failed; reproduce locally with the Gitea tag'; exit 1; }
+
+      - name: Check version and sign APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          test -d "$SDK_ROOT/build-tools" || { echo 'Android build tools missing'; exit 1; }
+          BUILD_TOOLS="$(find "$SDK_ROOT/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          UNSIGNED="$RUNNER_TEMP/source/app/build/outputs/apk/release/app-release-unsigned.apk"
+          test -f "$UNSIGNED" || { echo 'Unsigned APK missing'; exit 1; }
+          BADGING="$("$BUILD_TOOLS/aapt" dump badging "$UNSIGNED" | sed -n '1p')"
+          [[ "$BADGING" == *"versionName='${TAG#v}'"* ]] || { echo 'APK versionName does not match release tag'; exit 1; }
+          printf '%s' "$APK_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/release.keystore"
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks "$RUNNER_TEMP/release.keystore" --ks-key-alias "$APK_KEY_ALIAS" \
+            --ks-pass env:APK_STORE_PASS --key-pass env:APK_KEY_PASS \
+            --out "$RUNNER_TEMP/VIPFucker-$TAG.apk" "$UNSIGNED" > /dev/null
+          SIGNER_INFO="$("$BUILD_TOOLS/apksigner" verify --min-sdk-version 26 --print-certs "$RUNNER_TEMP/VIPFucker-$TAG.apk")"
+          [[ "${SIGNER_INFO,,}" == *"sha-256 digest: ${APK_CERT_SHA256,,}"* ]] || { echo 'Unexpected signing certificate'; exit 1; }
+
+      - name: Publish GitHub Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" "$RUNNER_TEMP/VIPFucker-$TAG.apk" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "VIPFucker $TAG" \
+            --notes 'Signed APK built from the matching tag in the private Gitea repository.'

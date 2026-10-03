@@ -99,11 +99,15 @@ jobs:
           SIGNER_INFO="$("$BUILD_TOOLS/apksigner" verify --min-sdk-version 26 --print-certs "$RUNNER_TEMP/VIPFucker-$TAG.apk")"
           [[ "${SIGNER_INFO,,}" == *"sha-256 digest: ${APK_CERT_SHA256,,}"* ]] || { echo 'Unexpected signing certificate'; exit 1; }
 
+      - uses: actions/checkout@v4
+
       - name: Publish GitHub Release
         shell: bash
         run: |
           set -euo pipefail
+          NOTES_FILE="$GITHUB_WORKSPACE/release-notes/$TAG.md"
+          test -f "$NOTES_FILE" || { echo "Release notes missing: $TAG"; exit 1; }
           gh release create "$TAG" "$RUNNER_TEMP/VIPFucker-$TAG.apk" \
             --repo "$GITHUB_REPOSITORY" \
             --title "VIPFucker $TAG" \
-            --notes 'VIPFucker Android 安装包。安装前请确认设备满足 README 中的系统及 LSPosed 要求。'
+            --notes-file "$NOTES_FILE"

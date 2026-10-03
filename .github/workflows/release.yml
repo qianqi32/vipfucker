@@ -65,6 +65,14 @@ jobs:
           mkdir -p "$RUNNER_TEMP/source/app/src/main/assets"
           printf '%s' "$PREFS_INJECT_JSON_B64" | base64 --decode > "$RUNNER_TEMP/source/app/src/main/assets/prefs_inject.json"
           jq -e 'type == "object"' "$RUNNER_TEMP/source/app/src/main/assets/prefs_inject.json" >/dev/null
+          jq -r 'to_entries[] | select(.value | type == "object") | .key' \
+            "$RUNNER_TEMP/source/app/src/main/assets/prefs_inject.json" | LC_ALL=C sort > "$RUNNER_TEMP/rule-packages"
+          LC_ALL=C sort "$RUNNER_TEMP/source/app/src/main/resources/META-INF/xposed/scope.list" \
+            > "$RUNNER_TEMP/scope-packages"
+          if ! diff -u "$RUNNER_TEMP/scope-packages" "$RUNNER_TEMP/rule-packages"; then
+            echo 'Injected rules do not match this release tag; update PREFS_INJECT_JSON_B64'
+            exit 1
+          fi
 
       - uses: actions/setup-java@v5
         with:

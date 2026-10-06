@@ -1,0 +1,56 @@
+name: 问题反馈
+description: 已适配应用功能不生效、闪退或模块本身出现问题
+title: "[问题反馈] "
+labels: [bug]
+body:
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已查看常见问题、确认作用域已授权，并重启目标应用进程。
+          required: true
+        - label: 我已搜索现有问题，确认没有相同反馈。
+          required: true
+  - type: input
+    id: module-version
+    attributes:
+      label: VIPFucker 版本
+      placeholder: 例如：0.0.2
+    validations:
+      required: true
+  - type: input
+    id: target-app
+    attributes:
+      label: 目标应用与版本
+      description: 如果是模块界面或更新功能的问题，请填写“不涉及”。
+      placeholder: 例如：应用名称 1.2.3
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: 设备与框架环境
+      description: 填写设备型号、Android 版本和 LSPosed 版本或分支。
+      placeholder: 例如：设备型号 / Android 15 / LSPosed 版本
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 说明从启用模块和作用域到问题出现的具体操作。
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: 实际结果与预期结果
+      description: 分别说明实际发生了什么、预期应该怎样。
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 截图与日志（可选）
+      description: 必要时附上截图或清空日志后重新复现所得的相关 LSPosed 模块日志。公开提交前请遮盖账号、令牌及其他私人信息；不要上传完整安装包。

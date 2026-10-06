@@ -1,0 +1,45 @@
+name: 适配请求
+description: 请求支持新的应用或目标应用的新版本
+title: "[适配请求] "
+labels: [enhancement]
+body:
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已查看已适配应用列表并搜索现有请求，确认没有重复提交。
+          required: true
+  - type: input
+    id: app-name
+    attributes:
+      label: 应用名称
+      placeholder: 例如：应用的官方名称
+    validations:
+      required: true
+  - type: input
+    id: package-name
+    attributes:
+      label: 应用包名
+      placeholder: 例如：com.example.app
+    validations:
+      required: true
+  - type: input
+    id: app-version
+    attributes:
+      label: 应用版本
+      placeholder: 例如：1.2.3
+    validations:
+      required: true
+  - type: textarea
+    id: requested-behavior
+    attributes:
+      label: 期望适配的具体功能
+      description: 请说明希望改变的行为，不要只填写“求适配”。请求不保证会被采纳。
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: 应用官方获取地址（可选）
+      description: 请提供官网或官方商店页面；不要上传 APK 或提供第三方网盘链接。

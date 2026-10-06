@@ -6,7 +6,7 @@
 
 [![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white)](https://www.android.com/) [![LSPosed](https://img.shields.io/badge/LSPosed-API%20102-blue)](https://github.com/LSPosed/LSPosed) [![Download](https://img.shields.io/badge/APK-Releases-orange)](https://github.com/qianqi32/vipfucker/releases)
 
-**[下载安装包](https://github.com/qianqi32/vipfucker/releases) · [Telegram 频道](https://t.me/VIPFuckerApp)**
+**[下载安装包](https://github.com/qianqi32/vipfucker/releases) · [问题反馈](https://github.com/qianqi32/vipfucker/issues/new/choose) · [Telegram 频道](https://t.me/VIPFuckerApp)**
 
 </div>
 
@@ -59,6 +59,10 @@ VIPFucker 为已适配的应用加载对应规则，并在模块界面展示应�
 **应用在列表中，却没有生效？** 检查作用域是否已经授权、目标应用版本是否符合推荐版本，再重启目标应用。显示在列表中不代表作用域已获授权。
 
 **更新模块后仍未生效？** 重启目标应用进程。切换界面并不能让所有规则即时重新加载。
+
+## 问题反馈
+
+遇到故障或希望适配新的应用，请在 [Issues](https://github.com/qianqi32/vipfucker/issues/new/choose) 中选择“问题反馈”或“适配请求”。反馈前请先搜索已有问题，并提供目标应用版本与必要的复现信息。Issues 是公开页面；上传截图或日志前请遮盖账号、令牌等私人信息，不要上传安装包。
 
 ## ⚠️ 使用须知
 

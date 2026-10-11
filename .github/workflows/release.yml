@@ -62,11 +62,19 @@ jobs:
           git -C "$RUNNER_TEMP/source" remote add origin "$GITEA_SSH_URL"
           git -C "$RUNNER_TEMP/source" fetch --quiet --depth=1 origin "refs/tags/$TAG:refs/tags/$TAG"
           git -C "$RUNNER_TEMP/source" checkout --quiet --detach "refs/tags/$TAG^{commit}"
+          test "$(git -C "$RUNNER_TEMP/source" cat-file -t "refs/tags/$TAG")" = tag || { echo 'Release tag must be annotated with release notes'; exit 1; }
+          git -C "$RUNNER_TEMP/source" for-each-ref --format='%(contents)' "refs/tags/$TAG" > "$RUNNER_TEMP/release-notes.md"
+          grep -q '[^[:space:]]' "$RUNNER_TEMP/release-notes.md" || { echo 'Release tag has no release notes'; exit 1; }
           mkdir -p "$RUNNER_TEMP/source/app/src/main/assets"
           printf '%s' "$PREFS_INJECT_JSON_B64" | base64 --decode > "$RUNNER_TEMP/source/app/src/main/assets/prefs_inject.json"
-          jq -e 'type == "object"' "$RUNNER_TEMP/source/app/src/main/assets/prefs_inject.json" >/dev/null
-          jq -r 'to_entries[] | select(.value | type == "object") | .key' \
-            "$RUNNER_TEMP/source/app/src/main/assets/prefs_inject.json" | LC_ALL=C sort > "$RUNNER_TEMP/rule-packages"
+          RULE_FILES=("$RUNNER_TEMP/source/app/src/main/assets/prefs_inject.json")
+          for name in coolapk_rules.json hookvip_rules.json bili_rules.json popular_rules.json; do
+            RULE_FILES+=("$RUNNER_TEMP/source/app/src/main/assets/$name")
+          done
+          jq -s -e 'all(.[]; type == "object") and (([.[] | keys[]] | length) == ([.[] | keys[]] | unique | length))' \
+            "${RULE_FILES[@]}" >/dev/null || { echo 'Invalid or duplicate rule packages'; exit 1; }
+          jq -s -r '.[] | to_entries[] | select(.value | type == "object") | .key' \
+            "${RULE_FILES[@]}" | LC_ALL=C sort > "$RUNNER_TEMP/rule-packages"
           LC_ALL=C sort "$RUNNER_TEMP/source/app/src/main/resources/META-INF/xposed/scope.list" \
             > "$RUNNER_TEMP/scope-packages"
           if ! diff -u "$RUNNER_TEMP/scope-packages" "$RUNNER_TEMP/rule-packages"; then
@@ -113,9 +121,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          NOTES_FILE="$GITHUB_WORKSPACE/release-notes/$TAG.md"
-          test -f "$NOTES_FILE" || { echo "Release notes missing: $TAG"; exit 1; }
           gh release create "$TAG" "$RUNNER_TEMP/VIPFucker-$TAG.apk" \
             --repo "$GITHUB_REPOSITORY" \
             --title "VIPFucker $TAG" \
-            --notes-file "$NOTES_FILE"
+            --notes-file "$RUNNER_TEMP/release-notes.md"

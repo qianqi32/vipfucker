@@ -66,7 +66,14 @@ jobs:
           git -C "$RUNNER_TEMP/source" for-each-ref --format='%(contents)' "refs/tags/$TAG" > "$RUNNER_TEMP/release-notes.md"
           grep -q '[^[:space:]]' "$RUNNER_TEMP/release-notes.md" || { echo 'Release tag has no release notes'; exit 1; }
           mkdir -p "$RUNNER_TEMP/source/app/src/main/assets"
-          printf '%s' "$PREFS_INJECT_JSON_B64" | base64 --decode > "$RUNNER_TEMP/source/app/src/main/assets/prefs_inject.json"
+          # PREFS_INJECT_JSON_B64 is gzip-compressed then base64-encoded so the rules stay
+          # below GitHub's 48 KB secret limit. Plain base64 is still accepted for old secrets.
+          printf '%s' "$PREFS_INJECT_JSON_B64" | base64 --decode > "$RUNNER_TEMP/prefs_inject.payload"
+          if gzip -t "$RUNNER_TEMP/prefs_inject.payload" 2>/dev/null; then
+            gunzip -c "$RUNNER_TEMP/prefs_inject.payload" > "$RUNNER_TEMP/source/app/src/main/assets/prefs_inject.json"
+          else
+            cp "$RUNNER_TEMP/prefs_inject.payload" "$RUNNER_TEMP/source/app/src/main/assets/prefs_inject.json"
+          fi
           RULE_FILES=("$RUNNER_TEMP/source/app/src/main/assets/prefs_inject.json")
           for name in coolapk_rules.json hookvip_rules.json bili_rules.json popular_rules.json; do
             RULE_FILES+=("$RUNNER_TEMP/source/app/src/main/assets/$name")

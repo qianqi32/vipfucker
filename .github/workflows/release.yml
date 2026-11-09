@@ -13,10 +13,6 @@ on:
 permissions:
   contents: write
 
-concurrency:
-  group: release-${{ github.event.client_payload.tag || inputs.tag }}
-  cancel-in-progress: false
-
 jobs:
   release:
     runs-on: ubuntu-24.04

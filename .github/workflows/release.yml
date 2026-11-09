@@ -101,7 +101,11 @@ jobs:
           set -euo pipefail
           SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
           test -f "$SDK_ROOT/platforms/android-37.0/android.jar" || { echo 'Android SDK platform 37.0 missing'; exit 1; }
-          bash ./gradlew --no-daemon --console=plain :app:assembleRelease > "$RUNNER_TEMP/gradle-build.log" 2>&1 || { echo 'Gradle build failed; reproduce locally with the release tag'; exit 1; }
+          if ! bash ./gradlew --no-daemon --console=plain :app:assembleRelease > "$RUNNER_TEMP/gradle-build.log" 2>&1; then
+            echo 'Gradle build failed; last 250 log lines:'
+            tail -n 250 "$RUNNER_TEMP/gradle-build.log"
+            exit 1
+          fi
 
       - name: Check version and sign APK
         shell: bash

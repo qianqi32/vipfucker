@@ -9,6 +9,14 @@ on:
         description: Existing release tag (vX.Y.Z)
         required: true
         type: string
+      source_commit:
+        description: Optional full private source commit for a corrected build
+        required: false
+        type: string
+      replace_existing:
+        description: Explicitly replace an existing same-version APK
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -19,6 +27,8 @@ jobs:
     timeout-minutes: 45
     env:
       TAG: ${{ github.event.client_payload.tag || inputs.tag }}
+      SOURCE_COMMIT: ${{ inputs.source_commit }}
+      REPLACE_EXISTING: ${{ inputs.replace_existing || false }}
       GITEA_SSH_URL: ${{ secrets.GITEA_SSH_URL }}
       GITEA_DEPLOY_KEY: ${{ secrets.GITEA_DEPLOY_KEY }}
       GITEA_KNOWN_HOSTS: ${{ secrets.GITEA_KNOWN_HOSTS }}
@@ -35,11 +45,16 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Invalid release tag'; exit 1; }
+          [[ -z "$SOURCE_COMMIT" || "$SOURCE_COMMIT" =~ ^[[:xdigit:]]{40}$ ]] || { echo 'Invalid source commit'; exit 1; }
+          if [[ "$REPLACE_EXISTING" == true ]]; then
+            test -n "$SOURCE_COMMIT" || { echo 'Replacement requires an explicit source commit'; exit 1; }
+            gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+          fi
           for name in GITEA_SSH_URL GITEA_DEPLOY_KEY GITEA_KNOWN_HOSTS PREFS_INJECT_JSON_B64 APK_KEYSTORE_B64 APK_KEY_ALIAS APK_STORE_PASS APK_KEY_PASS APK_CERT_SHA256; do
             test -n "${!name}" || { echo "Missing secret: $name"; exit 1; }
           done
           [[ "$APK_CERT_SHA256" =~ ^[[:xdigit:]]{64}$ ]] || { echo 'Invalid signing certificate fingerprint'; exit 1; }
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+          if [[ "$REPLACE_EXISTING" != true ]] && gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo 'Release already exists; refusing to replace it'
             exit 1
           fi
@@ -61,6 +76,11 @@ jobs:
           test "$(git -C "$RUNNER_TEMP/source" cat-file -t "refs/tags/$TAG")" = tag || { echo 'Release tag must be annotated with release notes'; exit 1; }
           git -C "$RUNNER_TEMP/source" for-each-ref --format='%(contents)' "refs/tags/$TAG" > "$RUNNER_TEMP/release-notes.md"
           grep -q '[^[:space:]]' "$RUNNER_TEMP/release-notes.md" || { echo 'Release tag has no release notes'; exit 1; }
+          if [[ -n "$SOURCE_COMMIT" ]]; then
+            git -C "$RUNNER_TEMP/source" fetch --quiet --depth=1 origin "$SOURCE_COMMIT"
+            git -C "$RUNNER_TEMP/source" checkout --quiet --detach "$SOURCE_COMMIT"
+            test "$(git -C "$RUNNER_TEMP/source" rev-parse HEAD)" = "$SOURCE_COMMIT"
+          fi
           mkdir -p "$RUNNER_TEMP/source/app/src/main/assets"
           # PREFS_INJECT_JSON_B64 is gzip-compressed then base64-encoded so the rules stay
           # below GitHub's 48 KB secret limit. Plain base64 is still accepted for old secrets.
@@ -114,6 +134,17 @@ jobs:
           test -f "$UNSIGNED" || { echo 'Unsigned APK missing'; exit 1; }
           BADGING="$("$BUILD_TOOLS/aapt" dump badging "$UNSIGNED" | sed -n '1p')"
           [[ "$BADGING" == *"versionName='${TAG#v}'"* ]] || { echo 'APK versionName does not match release tag'; exit 1; }
+          if [[ "$REPLACE_EXISTING" == true ]]; then
+            mkdir -p "$RUNNER_TEMP/previous"
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "VIPFucker-$TAG.apk" --dir "$RUNNER_TEMP/previous"
+            PREVIOUS="$RUNNER_TEMP/previous/VIPFucker-$TAG.apk"
+            OLD_CODE="$("$BUILD_TOOLS/aapt" dump badging "$PREVIOUS" | sed -n "1s/.*versionCode='\([^']*\)'.*/\1/p")"
+            NEW_CODE="$(sed -n "s/.*versionCode='\([^']*\)'.*/\1/p" <<< "$BADGING")"
+            test -n "$OLD_CODE"
+            test "$NEW_CODE" = "$OLD_CODE" || { echo 'Replacement must retain versionCode'; exit 1; }
+            OLD_SIGNER="$("$BUILD_TOOLS/apksigner" verify --min-sdk-version 26 --print-certs "$PREVIOUS")"
+            [[ "${OLD_SIGNER,,}" == *"sha-256 digest: ${APK_CERT_SHA256,,}"* ]] || { echo 'Previous signing certificate mismatch'; exit 1; }
+          fi
           printf '%s' "$APK_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/release.keystore"
           "$BUILD_TOOLS/apksigner" sign \
             --ks "$RUNNER_TEMP/release.keystore" --ks-key-alias "$APK_KEY_ALIAS" \
@@ -128,7 +159,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh release create "$TAG" "$RUNNER_TEMP/VIPFucker-$TAG.apk" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "VIPFucker $TAG" \
-            --notes-file "$RUNNER_TEMP/release-notes.md"
+          if [[ "$REPLACE_EXISTING" == true ]]; then
+            NAME="VIPFucker-$TAG.apk"
+            TEMP_NAME="VIPFucker-$TAG-${GITHUB_RUN_ID}.apk"
+            cp "$RUNNER_TEMP/$NAME" "$RUNNER_TEMP/$TEMP_NAME"
+            gh release upload "$TAG" "$RUNNER_TEMP/$TEMP_NAME" --repo "$GITHUB_REPOSITORY"
+            RELEASE_ID="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.id')"
+            ASSETS="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets")"
+            NEW_ID="$(jq -r --arg name "$TEMP_NAME" '.[] | select(.name == $name) | .id' <<< "$ASSETS")"
+            OLD_ID="$(jq -r --arg name "$NAME" '.[] | select(.name == $name) | .id' <<< "$ASSETS")"
+            test -n "$NEW_ID"
+            test -n "$OLD_ID"
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$OLD_ID"
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/assets/$NEW_ID" -f name="$NAME" >/dev/null
+            gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq '.body' > "$RUNNER_TEMP/corrected-notes.md"
+            COUNT="$(grep -c '[^[:space:]]' "$RUNNER_TEMP/source/app/src/main/resources/META-INF/xposed/scope.list")"
+            printf '\n\n### Corrected same-version build\nSource: `%s`. Target packages: %s. Version remains unchanged; download and install manually.\n' "$SOURCE_COMMIT" "$COUNT" >> "$RUNNER_TEMP/corrected-notes.md"
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/corrected-notes.md"
+          else
+            gh release create "$TAG" "$RUNNER_TEMP/VIPFucker-$TAG.apk" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "VIPFucker $TAG" \
+              --notes-file "$RUNNER_TEMP/release-notes.md"
+          fi
